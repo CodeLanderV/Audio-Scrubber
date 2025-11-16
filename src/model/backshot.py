@@ -27,9 +27,9 @@ Training script for 1D U-Net Audio Denoiser
 
 # --- Configuration ---
 class Config:
-    # Paths - Using LibriSpeech processed dataset with SNR-based noise
-    CLEAN_AUDIO_DIR = str(Paths.LIBRISPEECH_PROCESSED_SNR / "clean")
-    NOISY_AUDIO_DIR = str(Paths.LIBRISPEECH_PROCESSED_SNR / "noisy")
+    # Paths - Using LibriSpeech processed dataset (dev-clean)
+    CLEAN_AUDIO_DIR = str(Paths.LIBRISPEECH_PROCESSED / "dev-clean" / "clean")
+    NOISY_AUDIO_DIR = str(Paths.LIBRISPEECH_PROCESSED / "dev-clean" / "noisy")
     MODEL_SAVE_PATH = str(Paths.MODEL_BEST)
     
     # Audio parameters - Using config
@@ -64,11 +64,13 @@ class AudioDataset(Dataset):
         self.sample_rate = sample_rate
         print("Loading the clean and noisy files")
 
-        # Get all clean files
-        self.clean_files = sorted([f for f in os.listdir(clean_dir) if f.endswith('.flac')])
+        # Get all clean files (recursively)
+        clean_path = Path(clean_dir)
+        self.clean_files = sorted([str(f.relative_to(clean_path)) for f in clean_path.rglob('*.flac')])
         
-        # Get all noisy files
-        self.noisy_files = sorted([f for f in os.listdir(noisy_dir) if f.endswith('.flac')])
+        # Get all noisy files (recursively)
+        noisy_path = Path(noisy_dir)
+        self.noisy_files = sorted([str(f.relative_to(noisy_path)) for f in noisy_path.rglob('*.flac')])
         
         print(f"Found {len(self.clean_files)} clean files") 
         print(f"Found {len(self.noisy_files)} noisy files")
@@ -82,14 +84,14 @@ class AudioDataset(Dataset):
         Load a noisy audio file and its corresponding clean version.
         Ensures exact audio_length for all samples to prevent tensor size mismatches.
         """
-        # Load noisy audio
+        # Load noisy audio (use full path)
         noisy_path = os.path.join(self.noisy_dir, self.noisy_files[idx])
         noisy_audio, _ = librosa.load(noisy_path, sr=self.sample_rate)
         
         # Extract the base filename to find the corresponding clean file
         # Noisy filename format with SNR: "1272-128104-0000_snr_10dB.flac"
         # Clean filename format: "1272-128104-0000.flac"
-        noisy_filename = self.noisy_files[idx]
+        noisy_filename = Path(self.noisy_files[idx]).name
         
         # Remove the SNR suffix to get clean filename
         if '_snr_' in noisy_filename:
@@ -101,8 +103,12 @@ class AudioDataset(Dataset):
             else:
                 clean_filename = noisy_filename
         
+        # Get the directory structure from noisy file and apply to clean
+        noisy_rel_dir = Path(self.noisy_files[idx]).parent
+        clean_rel_path = noisy_rel_dir / clean_filename
+        
         # Load clean audio
-        clean_path = os.path.join(self.clean_dir, clean_filename)
+        clean_path = os.path.join(self.clean_dir, str(clean_rel_path))
         clean_audio, _ = librosa.load(clean_path, sr=self.sample_rate)
         
         # Ensure both have the same length first

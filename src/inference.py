@@ -10,13 +10,62 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import Paths, AudioSettings
 from model.neuralnet import UNet1D
 
+MODEL_PATH = r"saved_models\checkpoints\latest_checkpoint.pth"
+DEFAULT_INPUT_DIR = r"Tests\samples"
+DEFAULT_OUTPUT_DIR = r"Tests\testing2\out"
+SAMPLE_RATE = 22050
 """
+================================================================================
+AUDIO DENOISER - INFERENCE MODULE
+================================================================================
+
+Purpose:
+    Batch inference script for denoising audio files using trained 1D U-Net model.
+    Supports single file or directory batch processing.
+
+Setup & Dependencies:
+    - Requires: torch, librosa, soundfile
+    - Model checkpoint: saved_models/unet1d_best.pth
+    - Audio format: Any format librosa supports (wav, flac, mp3, etc.)
+    - Sample rate: 22050 Hz for speech (configured in config.py)
+
+Usage Examples:
+
+    1. SINGLE FILE DENOISING:
+       python src/inference.py path/to/noisy_audio.wav
+       → Outputs: path/to/denoised_noisy_audio.wav
+
+    2. SINGLE FILE WITH CUSTOM OUTPUT:
+       python src/inference.py noisy.wav output_clean.wav
+       → Outputs: output_clean.wav
+
+    3. BATCH DENOISING (all .flac files in directory):
+       python src/inference.py
+       → Reads from: testing/
+       → Outputs to: testing/out/denoised_*.flac
+
+How to Use in Your Code:
+
+    from src.inference import Denoiser
+    
+    # Initialize denoiser
+    denoiser = Denoiser(model_path="saved_models/unet1d_best.pth", device='cuda')
+    
+    # Denoise a file
+    denoiser.denoise_file("noisy_audio.wav", "clean_audio.wav", sample_rate=22050)
+
+Model Training:
+    - Train with: python src/model/backshot.py
+    - Resume from checkpoint: python src/model/backshot.py resume
+    - Best model saved to: saved_models/unet1d_best.pth
+
 Created by Satya with Copilot @ 15/11/25
 
 Inference script for 1D U-Net Audio Denoiser
 - Loads a trained model
 - Denoises audio files
 - Saves the cleaned output
+================================================================================
 """
 
 class Denoiser:
@@ -132,10 +181,7 @@ def main():
         python src/inference.py path/to/audio.flac output.flac  # Denoise with custom output path
     """
     # Configuration
-    MODEL_PATH = r"saved_models\unet1d_best.pth"
-    DEFAULT_INPUT_DIR = r"testing"
-    DEFAULT_OUTPUT_DIR = r"testing\out"
-    SAMPLE_RATE = 22050
+
     
     # Check if model exists
     if not Path(MODEL_PATH).exists():

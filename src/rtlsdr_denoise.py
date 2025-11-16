@@ -14,6 +14,122 @@ from config import Paths, AudioSettings, RTLSDRSettings
 from model.neuralnet import UNet1D
 
 """
+================================================================================
+RTL-SDR FM RADIO DENOISER - REAL-TIME
+================================================================================
+
+Purpose:
+    Real-time denoising of FM radio broadcasts using RTL-SDR USB dongle.
+    Captures FM radio signal, demodulates to audio, denoises through trained
+    U-Net model, and plays clean audio back in real-time.
+
+Setup & Dependencies:
+    - Requires: torch, numpy, sounddevice, pyrtsdr (or manual rtl_fm setup)
+    - Model checkpoint: saved_models/unet1d_best.pth
+    - Hardware: RTL-SDR USB dongle (RTL2832U based, ~$25-40)
+    - OS: Windows (uses rtl_fm.exe), Linux (uses rtl_fm), macOS (use QEMU or VM)
+
+Hardware Setup:
+
+    RTL-SDR Dongle:
+    1. Purchase: RTL2832U-based dongle (e.g., "USB RTL-SDR" on Amazon)
+    2. Connect: USB port to computer
+    3. Install drivers:
+       - Windows: Zadig (http://zadig.akeo.ie/) - select WinUSB driver
+       - Linux: sudo apt-get install librtlsdr-dev rtl-sdr
+    4. Test: rtl_fm -f 99.5M -M wbfm -s 200k -r 48k -
+
+Architecture:
+    - RTL-SDR Thread: Captures FM signal via rtl_fm subprocess
+    - AI Thread: Denoises audio chunks through U-Net model
+    - Audio Thread: Plays denoised audio to speakers
+    - Queue-based system: Smooth, real-time performance
+
+Usage Examples:
+
+    1. START FM RADIO DENOISING (99.5 MHz):
+       python src/rtlsdr_denoise.py
+       → Tunes to 99.5 MHz (configurable in config.py)
+       → Denoises FM broadcast in real-time
+       → Plays clean audio to speakers
+       → Press Ctrl+C to stop
+
+    2. TUNE TO DIFFERENT FREQUENCY:
+       python src/rtlsdr_denoise.py --frequency 101.5e6
+       → Tunes to 101.5 MHz
+       → Example frequencies: 98.5e6, 100.1e6, 104.3e6, etc.
+
+    3. WITH SPECIFIC MODEL AND DEVICE:
+       python src/rtlsdr_denoise.py --model saved_models/unet1d_best.pth --device cuda
+
+    4. SPECIFY PPM CORRECTION (for dongle frequency accuracy):
+       python src/rtlsdr_denoise.py --frequency 99.5e6 --ppm 35
+       → PPM (parts per million) corrects oscillator drift
+       → Typical range: 0-100, find optimal value for your dongle
+
+How to Use in Your Code:
+
+    from src.rtlsdr_denoise import RTLSDRDenoiser
+    
+    # Initialize denoiser
+    denoiser = RTLSDRDenoiser(
+        model_path="saved_models/unet1d_best.pth",
+        frequency=99.5e6,  # 99.5 MHz
+        device='cuda' if torch.cuda.is_available() else 'cpu'
+    )
+    
+    # Start real-time FM radio denoising
+    denoiser.start()
+    
+    # ... let it run ...
+    
+    # Stop when done
+    denoiser.stop()
+
+Model Requirements:
+    - Must be trained on 22050 Hz audio at 44096 samples
+    - Train with: python src/model/backshot.py
+    - Resume checkpoint: python src/model/backshot.py resume
+    - Best model saved to: saved_models/unet1d_best.pth
+
+RTL-SDR Configuration:
+    - FM frequency range: 88-108 MHz (standard broadcast)
+    - FM signal bandwidth: 200 kHz
+    - Audio sample rate: 22050 Hz (downsampled from 48 kHz)
+    - Demodulation: WB-FM (wbfm)
+
+Troubleshooting:
+
+    Q: "rtl_fm not found" error
+    A: Install rtl-sdr tools:
+       - Windows: Download from https://github.com/merbanan/rtl_fm
+       - Linux: sudo apt-get install rtl-sdr
+       - Ensure rtl_fm is in system PATH
+
+    Q: "No RTL-SDR device found" error
+    A: Check USB connection and drivers installed correctly
+       - Windows: Check Device Manager for RTL2832U device
+       - Linux: lsusb | grep Realtek confirms detection
+
+    Q: Poor audio quality / weak signal
+    A: 
+       - Check antenna (longer is better, 80cm for optimal)
+       - Adjust PPM offset (--ppm parameter)
+       - Move dongle away from computer/other USB devices
+       - Try different FM station frequencies
+
+    Q: High latency or stuttering
+    A:
+       - Use CUDA: --device cuda
+       - Reduce chunk size in config.py
+       - Close other CPU-intensive programs
+
+Performance Tips:
+    - Use CUDA for faster processing: --device cuda
+    - Longer antenna (~80cm) for better signal reception
+    - Keep RTL-SDR USB dongle away from computer EMI sources
+    - Experiment with PPM offset for your specific dongle
+
 Created by Satya with Copilot @ 15/11/25
 
 Real-Time Audio Denoiser for RTL-SDR FM Radio
@@ -21,6 +137,7 @@ Real-Time Audio Denoiser for RTL-SDR FM Radio
 - AI Thread: Denoises audio chunks through U-Net model
 - Audio Thread: Plays denoised audio to speakers
 - Uses queues as "conveyor belts" for smooth operation
+================================================================================
 """
 
 class RTLSDRDenoiser:

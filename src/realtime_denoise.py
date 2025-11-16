@@ -14,6 +14,76 @@ from config import Paths, AudioSettings
 from model.neuralnet import UNet1D
 
 """
+================================================================================
+REAL-TIME AUDIO DENOISER - MICROPHONE INPUT
+================================================================================
+
+Purpose:
+    Real-time audio denoising using microphone input. Captures live audio,
+    denoises it through trained U-Net model, and plays clean audio back
+    in real-time using multi-threaded architecture.
+
+Setup & Dependencies:
+    - Requires: torch, sounddevice, numpy
+    - Model checkpoint: saved_models/unet1d_best.pth
+    - Hardware: Microphone input (built-in or USB)
+    - Audio format: 22050 Hz mono (configured in config.py)
+
+Architecture:
+    - Audio Thread: Captures microphone & plays denoised output (high priority)
+    - AI Thread: Processes audio chunks through U-Net model
+    - Queue-based system: Prevents stuttering and ensures real-time performance
+    - Pure real-time: No recording file created, direct mic-to-speaker
+
+Usage Examples:
+
+    1. START REAL-TIME DENOISING (default settings):
+       python src/realtime_denoise.py
+       → Listens to microphone
+       → Denoises in real-time
+       → Plays clean audio to speakers
+       → Press Ctrl+C to stop
+
+    2. WITH SPECIFIC MODEL AND DEVICE:
+       python src/realtime_denoise.py --model saved_models/unet1d_best.pth --device cuda
+
+    3. WITH CUSTOM SETTINGS:
+       python src/realtime_denoise.py --chunk-size 8192 --device cpu
+
+How to Use in Your Code:
+
+    from src.realtime_denoise import RealTimeDenoiser
+    
+    # Initialize denoiser
+    denoiser = RealTimeDenoiser(
+        model_path="saved_models/unet1d_best.pth",
+        device='cuda' if torch.cuda.is_available() else 'cpu'
+    )
+    
+    # Start real-time processing
+    denoiser.start()
+    
+    # ... let it run ...
+    
+    # Stop when done
+    denoiser.stop()
+
+Model Requirements:
+    - Must be trained on 22050 Hz audio at 44096 samples
+    - Train with: python src/model/backshot.py
+    - Resume checkpoint: python src/model/backshot.py resume
+    - Best model saved to: saved_models/unet1d_best.pth
+
+Audio Configuration:
+    - Sample rate: 22050 Hz (speech)
+    - Chunk size: 4096 samples (~0.19 seconds)
+    - Chunk overlap: 2048 samples (50% overlap for smooth transitions)
+
+Performance Tips:
+    - Use CUDA for faster processing: --device cuda
+    - Reduce chunk size for lower latency (trade-off: quality)
+    - Close other CPU-intensive programs for best performance
+
 Created by Satya with Copilot @ 15/11/25
 
 Real-Time Audio Denoiser using Multi-Threaded Architecture
@@ -21,6 +91,7 @@ Real-Time Audio Denoiser using Multi-Threaded Architecture
 - AI Thread: Processes audio chunks through the U-Net model
 - Uses queues as "conveyor belts" to prevent stuttering
 - Pure real-time: no recording, direct mic-to-speaker with denoising
+================================================================================
 """
 
 class RealTimeDenoiser:

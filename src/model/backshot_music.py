@@ -93,13 +93,17 @@ class MusicAudioDataset(Dataset):
         self.sample_rate = sample_rate
         print("Loading music clean and noisy files")
 
-        # Get all clean files
-        self.clean_files = sorted([f for f in os.listdir(clean_dir) 
-                                   if f.endswith(('.flac', '.wav', '.mp3'))])
+        # Get all clean files (recursively)
+        clean_path = Path(clean_dir)
+        self.clean_files = sorted([str(f.relative_to(clean_path)) for f in clean_path.rglob('*.flac') if not f.is_dir()])
+        self.clean_files += sorted([str(f.relative_to(clean_path)) for f in clean_path.rglob('*.wav') if not f.is_dir()])
+        self.clean_files += sorted([str(f.relative_to(clean_path)) for f in clean_path.rglob('*.mp3') if not f.is_dir()])
         
-        # Get all noisy files
-        self.noisy_files = sorted([f for f in os.listdir(noisy_dir) 
-                                   if f.endswith(('.flac', '.wav', '.mp3'))])
+        # Get all noisy files (recursively)
+        noisy_path = Path(noisy_dir)
+        self.noisy_files = sorted([str(f.relative_to(noisy_path)) for f in noisy_path.rglob('*.flac') if not f.is_dir()])
+        self.noisy_files += sorted([str(f.relative_to(noisy_path)) for f in noisy_path.rglob('*.wav') if not f.is_dir()])
+        self.noisy_files += sorted([str(f.relative_to(noisy_path)) for f in noisy_path.rglob('*.mp3') if not f.is_dir()])
         
         print(f"Found {len(self.clean_files)} clean music files") 
         print(f"Found {len(self.noisy_files)} noisy music files")
@@ -112,14 +116,14 @@ class MusicAudioDataset(Dataset):
         Load noisy music and its corresponding clean version.
         Ensures exact audio_length for all samples.
         """
-        # Load noisy audio
+        # Load noisy audio (use full path)
         noisy_path = os.path.join(self.noisy_dir, self.noisy_files[idx])
         noisy_audio, _ = librosa.load(noisy_path, sr=self.sample_rate)
         
         # Extract clean filename from noisy filename
         # Noisy format: "song_name_snr_10dB.flac"
         # Clean format: "song_name.flac"
-        noisy_filename = self.noisy_files[idx]
+        noisy_filename = Path(self.noisy_files[idx]).name
         
         if '_snr_' in noisy_filename:
             # Remove SNR suffix
@@ -130,8 +134,12 @@ class MusicAudioDataset(Dataset):
         else:
             clean_filename = noisy_filename
         
+        # Get the directory structure from noisy file and apply to clean
+        noisy_rel_dir = Path(self.noisy_files[idx]).parent
+        clean_rel_path = noisy_rel_dir / clean_filename
+        
         # Load clean audio
-        clean_path = os.path.join(self.clean_dir, clean_filename)
+        clean_path = os.path.join(self.clean_dir, str(clean_rel_path))
         clean_audio, _ = librosa.load(clean_path, sr=self.sample_rate)
         
         # Ensure both have same length
