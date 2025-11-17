@@ -102,7 +102,7 @@ class AudioSettings:
     # Audio length for training (in samples)
     # Must be divisible by 16 (2^4) for U-Net with 4 downsampling layers
     # Using 2 seconds: 44096 samples (closest to 44100 that's divisible by 16)
-    AUDIO_LENGTH = 44096  # ~2 seconds, divisible by 16
+    AUDIO_LENGTH = 4409600  # ~2 seconds, divisible by 16
     
     # Real-time processing settings
     CHUNK_SIZE = 4096  # Samples per chunk for real-time processing
@@ -214,7 +214,7 @@ class RTLSDRSettings:
     """RTL-SDR radio settings"""
     
     # Default FM frequency (in Hz)
-    FM_FREQUENCY = 99.5e6  # 99.5 MHz
+    FM_FREQUENCY = 101.1e6  # 99.5 MHz
     
     # Sample rate for RTL-SDR
     SDR_SAMPLE_RATE = 22050
