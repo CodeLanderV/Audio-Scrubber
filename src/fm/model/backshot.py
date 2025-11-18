@@ -178,7 +178,15 @@ class OnFlyNoiseDataset(Dataset):
         clean_path = Path(clean_dir)
         self.clean_files = sorted([str(f) for f in clean_path.rglob('*.flac')])
         
-        print(f"[OnFlyNoise] Found {len(self.clean_files)} clean files")
+        # Shuffle and optionally limit the number of clean files used
+        np.random.shuffle(self.clean_files)
+        # Hard cap for quick experiments / limited compute
+        max_files = int(os.environ.get("AS_MAX_FILES", "800"))
+        if len(self.clean_files) > max_files:
+            self.clean_files = self.clean_files[:max_files]
+            print(f"[OnFlyNoise] Found {len(self.clean_files)} clean files (capped to {max_files})")
+        else:
+            print(f"[OnFlyNoise] Found {len(self.clean_files)} clean files")
         
         # Load the real FM noise recording
         print(f"[OnFlyNoise] Loading FM noise from {noise_file}")

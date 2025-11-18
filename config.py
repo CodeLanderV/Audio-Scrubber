@@ -112,8 +112,8 @@ class AudioSettings:
     
     # Audio length for training (in samples)
     # Must be divisible by 16 (2^4) for U-Net with 4 downsampling layers
-    # Using 2 seconds: 44096 samples (closest to 44100 that's divisible by 16)
-    AUDIO_LENGTH = 4409600  # ~2 seconds, divisible by 16
+    # Using ~2 seconds: 44096 samples (closest to 44100 that's divisible by 16)
+    AUDIO_LENGTH = 44096  # ~2 seconds, divisible by 16
     
     # Real-time processing settings
     CHUNK_SIZE = 4096  # Samples per chunk for real-time processing
@@ -156,7 +156,8 @@ class TrainingConfig:
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Training hyperparameters (optimized for 8-hour training window)
-    BATCH_SIZE = 16  # Good balance between speed and stability
+    # For a 6GB GPU, start with a smaller batch size to avoid OOM
+    BATCH_SIZE = 4
     LEARNING_RATE = 0.0001  # Standard for Adam optimizer on audio tasks
     NUM_EPOCHS = 40  # Realistic for 8-hour window (~12 min/epoch = 480 min total)
     

@@ -12,7 +12,7 @@ from src.fm.model.neuralnet import UNet1D
 
 MODEL_PATH = str(Paths.MODEL_FM_BEST)
 DEFAULT_INPUT_DIR = r"Tests\samples"
-DEFAULT_OUTPUT_DIR = r"Tests\testing2\out"
+DEFAULT_OUTPUT_DIR = r"Tests\testing9"
 SAMPLE_RATE = 22050
 """
 ================================================================================
