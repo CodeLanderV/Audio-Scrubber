@@ -7,6 +7,11 @@ import sys
 from pathlib import Path
 import soundfile as sf
 import time
+import matplotlib.pyplot as plt
+import librosa
+import librosa.display
+from collections import deque
+from datetime import datetime
 
 # Add parent directory to path for config import
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -117,6 +122,88 @@ class LiveSDRDenoiser:
         else:
             print("  Mode: Denoising")
 
+        # Reporting buffers (Keep last 10 seconds)
+        self.history_duration = 10 
+        # Calculate max chunks: (Duration * SR) / ChunkSize
+        history_len = int((self.history_duration * self.sample_rate) / self.chunk_size)
+        self.input_history = deque(maxlen=history_len)
+        self.output_history = deque(maxlen=history_len)
+
+    def generate_report(self):
+        """Generate a performance report from the captured history."""
+        if not self.input_history or not self.output_history:
+            print("\n⚠️ Not enough data to generate report.")
+            return
+
+        print("\n📊 Generating Live Session Report...")
+        
+        # Convert history to arrays
+        # Deque contains chunks, so we need to concatenate
+        original = np.concatenate(list(self.input_history))
+        denoised = np.concatenate(list(self.output_history))
+        
+        # Ensure lengths match (they should, but just in case)
+        min_len = min(len(original), len(denoised))
+        original = original[:min_len]
+        denoised = denoised[:min_len]
+        
+        # Calculate metrics
+        noise_removed = original - denoised
+        orig_rms = np.sqrt(np.mean(original**2))
+        denoised_rms = np.sqrt(np.mean(denoised**2))
+        noise_rms = np.sqrt(np.mean(noise_removed**2))
+        
+        # SNR Estimation
+        snr_improvement = 20 * np.log10(denoised_rms / (noise_rms + 1e-9))
+        
+        print(f"   Captured Duration: {len(original)/self.sample_rate:.2f}s")
+        print(f"   Original RMS: {orig_rms:.4f}")
+        print(f"   Denoised RMS: {denoised_rms:.4f}")
+        print(f"   SNR Improvement (Est): {snr_improvement:.2f} dB")
+        
+        # Plotting
+        try:
+            plt.figure(figsize=(12, 8))
+            
+            # 1. Waveforms
+            plt.subplot(3, 1, 1)
+            plt.title("Waveform Comparison (Last 10s)")
+            plt.plot(original, label='Original (Noisy)', alpha=0.7, color='orange')
+            plt.plot(denoised, label='Denoised (Clean)', alpha=0.8, color='blue')
+            plt.legend()
+            plt.ylabel("Amplitude")
+            
+            # 2. Spectrograms
+            plt.subplot(3, 2, 3)
+            plt.title("Original Spectrogram")
+            D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(original)), ref=np.max)
+            librosa.display.specshow(D_orig, sr=self.sample_rate, x_axis='time', y_axis='log')
+            plt.colorbar(format='%+2.0f dB')
+            
+            plt.subplot(3, 2, 4)
+            plt.title("Denoised Spectrogram")
+            D_denoised = librosa.amplitude_to_db(np.abs(librosa.stft(denoised)), ref=np.max)
+            librosa.display.specshow(D_denoised, sr=self.sample_rate, x_axis='time', y_axis='log')
+            plt.colorbar(format='%+2.0f dB')
+            
+            # 3. Noise Profile
+            plt.subplot(3, 1, 3)
+            plt.title("Estimated Noise Profile")
+            plt.plot(noise_removed, color='red', alpha=0.6)
+            plt.xlabel("Time (samples)")
+            plt.ylabel("Amplitude")
+            
+            plt.tight_layout()
+            
+            # Save plot
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = f"live_report_{timestamp}.png"
+            plt.savefig(report_path)
+            print(f"   📈 Report saved to: {report_path}")
+            plt.close()
+        except Exception as e:
+            print(f"   ❌ Failed to generate plot: {e}")
+
     def _find_device_id(self, name, kind='input'):
         """Find audio device ID by its name."""
         devices = sd.query_devices()
@@ -143,6 +230,11 @@ class LiveSDRDenoiser:
                 if not self.in_queue.empty():
                     chunk = self.in_queue.get()
                     processed_count += 1
+                    
+                    # Record history
+                    self.input_history.append(chunk)
+                    self.output_history.append(chunk)
+                    
                     if not self.out_queue.full():
                         self.out_queue.put(chunk)
                     else:
@@ -173,6 +265,10 @@ class LiveSDRDenoiser:
                     
                     # Output only the first part of the processed buffer to avoid overlap artifacts
                     output_chunk = clean_buffer[:self.chunk_size]
+                    
+                    # Record history
+                    self.input_history.append(noisy_chunk)
+                    self.output_history.append(output_chunk)
                     
                     if not self.out_queue.full():
                         self.out_queue.put(output_chunk)
@@ -234,6 +330,37 @@ class LiveSDRDenoiser:
         self.ai_thread = Thread(target=self._ai_worker, daemon=True)
         self.ai_thread.start()
         
+        # --- Live Plot Setup ---
+        print("📊 Initializing Live Plot...")
+        plt.ion()
+        fig, (ax_wave, ax_spec) = plt.subplots(2, 1, figsize=(10, 8))
+        fig.canvas.manager.set_window_title("Live SDR Audio Monitor")
+        
+        # Waveform
+        x = np.arange(self.chunk_size)
+        line_noisy, = ax_wave.plot(x, np.zeros(self.chunk_size), color='orange', alpha=0.6, label='Noisy Input')
+        line_clean, = ax_wave.plot(x, np.zeros(self.chunk_size), color='blue', alpha=0.8, label='Clean Output')
+        ax_wave.set_ylim(-0.5, 0.5) 
+        ax_wave.set_title("Real-time Waveform")
+        ax_wave.legend(loc='upper right')
+        ax_wave.grid(True, alpha=0.3)
+        
+        # Spectrum
+        ax_spec.set_title("Real-time Frequency Spectrum")
+        ax_spec.set_xlabel("Frequency (Hz)")
+        ax_spec.set_ylabel("Magnitude (dB)")
+        ax_spec.set_xlim(0, self.sample_rate // 2)
+        ax_spec.set_ylim(-100, 0)
+        ax_spec.grid(True, alpha=0.3)
+        
+        freqs = np.fft.rfftfreq(self.chunk_size, 1/self.sample_rate)
+        line_spec_noisy, = ax_spec.plot(freqs, np.zeros_like(freqs), color='orange', alpha=0.6, label='Noisy')
+        line_spec_clean, = ax_spec.plot(freqs, np.zeros_like(freqs), color='blue', alpha=0.8, label='Clean')
+        ax_spec.legend(loc='upper right')
+        
+        plt.tight_layout()
+        # -----------------------
+        
         try:
             with sd.Stream(
                 device=(input_device_id, output_device_id),
@@ -247,15 +374,40 @@ class LiveSDRDenoiser:
                 print(f"   Input:  Device #{input_device_id} ('{self.input_device_name}')")
                 print(f"   Output: Device #{output_device_id if output_device_id else 'Default'}")
                 print(f"   Mode:   {'PASSTHROUGH (No AI)' if self.passthrough else 'DENOISING (AI Active)'}")
-                print(f"   Listening for audio...\n")
+                print(f"   Listening for audio... (Check the plot window)\n")
+                
                 while self.running.is_set():
-                    sd.sleep(100)
+                    # Update Plot Loop
+                    if self.input_history and self.output_history:
+                        try:
+                            # Get latest chunks
+                            noisy = self.input_history[-1]
+                            clean = self.output_history[-1]
+                            
+                            # Update Waveform
+                            line_noisy.set_ydata(noisy)
+                            line_clean.set_ydata(clean)
+                            
+                            # Update Spectrum
+                            fft_noisy = 20 * np.log10(np.abs(np.fft.rfft(noisy)) + 1e-9)
+                            fft_clean = 20 * np.log10(np.abs(np.fft.rfft(clean)) + 1e-9)
+                            
+                            line_spec_noisy.set_ydata(fft_noisy)
+                            line_spec_clean.set_ydata(fft_clean)
+                            
+                            fig.canvas.draw_idle()
+                            fig.canvas.flush_events()
+                        except Exception as e:
+                            pass # Ignore plot errors to keep audio running
+                            
+                    time.sleep(0.1) # 10 FPS
         
         except KeyboardInterrupt:
             print("\n\n⏹️  Stopping...")
         except Exception as e:
             print(f"\n❌ An error occurred: {e}")
         finally:
+            plt.close('all')
             self.stop()
     
     def stop(self):
@@ -266,6 +418,10 @@ class LiveSDRDenoiser:
         self.running.clear()
         if self.ai_thread and self.ai_thread.is_alive():
             self.ai_thread.join(timeout=1.0)
+        
+        # Generate report on exit
+        self.generate_report()
+        
         print("✅ Stopped successfully!")
 
 

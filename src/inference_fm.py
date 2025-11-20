@@ -3,6 +3,7 @@ import librosa
 import soundfile as sf
 import numpy as np
 import sys
+import matplotlib.pyplot as plt
 from pathlib import Path
 
 # Add parent directory to path for config import
@@ -11,8 +12,8 @@ from config import Paths, AudioSettings
 from src.fm.model.neuralnet import UNet1D
 
 MODEL_PATH = str(Paths.MODEL_FM_BEST)
-DEFAULT_INPUT_DIR = r"Tests\samples\FromSDR"
-DEFAULT_OUTPUT_DIR = r"Tests\tests\SDR3"
+DEFAULT_INPUT_DIR = r"Tests\samples\Arti"
+DEFAULT_OUTPUT_DIR = r"Tests\tests\testing9-speech"
 SAMPLE_RATE = 44100
 """
 ================================================================================
@@ -146,6 +147,64 @@ class Denoiser:
         
         return denoised_audio
     
+    def generate_report(self, input_path, output_path, original_audio, denoised_audio, sr):
+        """Generate a visual report comparing original and denoised audio."""
+        print("\n📊 Generating Performance Report...")
+        
+        # Calculate metrics
+        noise_removed = original_audio - denoised_audio
+        orig_rms = np.sqrt(np.mean(original_audio**2))
+        denoised_rms = np.sqrt(np.mean(denoised_audio**2))
+        noise_rms = np.sqrt(np.mean(noise_removed**2))
+        
+        # SNR Estimation (Approximate)
+        # Assuming noise is the difference between original and denoised
+        snr_improvement = 20 * np.log10(denoised_rms / (noise_rms + 1e-9))
+        
+        print(f"   Original RMS: {orig_rms:.4f}")
+        print(f"   Denoised RMS: {denoised_rms:.4f}")
+        print(f"   Noise RMS (Est): {noise_rms:.4f}")
+        print(f"   SNR Improvement (Est): {snr_improvement:.2f} dB")
+        
+        # Plotting
+        plt.figure(figsize=(12, 8))
+        
+        # 1. Waveforms
+        plt.subplot(3, 1, 1)
+        plt.title(f"Waveform Comparison: {Path(input_path).name}")
+        plt.plot(original_audio, label='Original (Noisy)', alpha=0.7, color='orange')
+        plt.plot(denoised_audio, label='Denoised (Clean)', alpha=0.8, color='blue')
+        plt.legend()
+        plt.ylabel("Amplitude")
+        
+        # 2. Spectrograms
+        plt.subplot(3, 2, 3)
+        plt.title("Original Spectrogram")
+        D_orig = librosa.amplitude_to_db(np.abs(librosa.stft(original_audio)), ref=np.max)
+        librosa.display.specshow(D_orig, sr=sr, x_axis='time', y_axis='log')
+        plt.colorbar(format='%+2.0f dB')
+        
+        plt.subplot(3, 2, 4)
+        plt.title("Denoised Spectrogram")
+        D_denoised = librosa.amplitude_to_db(np.abs(librosa.stft(denoised_audio)), ref=np.max)
+        librosa.display.specshow(D_denoised, sr=sr, x_axis='time', y_axis='log')
+        plt.colorbar(format='%+2.0f dB')
+        
+        # 3. Noise Profile
+        plt.subplot(3, 1, 3)
+        plt.title("Estimated Noise Profile (Original - Denoised)")
+        plt.plot(noise_removed, color='red', alpha=0.6)
+        plt.xlabel("Time (samples)")
+        plt.ylabel("Amplitude")
+        
+        plt.tight_layout()
+        
+        # Save plot
+        report_path = str(Path(output_path).parent / f"report_{Path(output_path).stem}.png")
+        plt.savefig(report_path)
+        print(f"   📈 Report saved to: {report_path}")
+        plt.close()
+
     def denoise_file(self, input_path, output_path, sample_rate=22050):
         """
         Denoise an audio file and save the result.
@@ -176,6 +235,9 @@ class Denoiser:
             # Default to WAV for .wav or unknown extensions
             sf.write(output_path, denoised, sr, format='WAV')
         print(f"  ✅ Saved to: {output_path}")
+        
+        # Generate Report
+        self.generate_report(input_path, output_path, audio, denoised, sr)
 
 
 def main():
