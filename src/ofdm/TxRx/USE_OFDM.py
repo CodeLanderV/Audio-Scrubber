@@ -234,39 +234,69 @@ def main():
                 print(f"   Saved: {rx_plot_path}")
                 
                 if args.denoise:
-                    # Save noisy version first
-                    noisy_file = output_dir / 'received_noisy.png'
-                    SignalUtils.qpsk_to_file(data, noisy_file)
-                    print(f"\n💾 Saved noisy: {noisy_file}")
+                    # Save noisy version first (qpsk_to_file expects directory)
+                    noisy_dir = output_dir / 'noisy'
+                    noisy_dir.mkdir(parents=True, exist_ok=True)
+                    success = SignalUtils.qpsk_to_file(data, str(noisy_dir))
                     
-                    # Denoise
-                    print("\n🧠 Applying AI denoising...")
-                    clean_data = SignalUtils.denoise_signal(data, args.model)
-                    
-                    # Save denoised version
-                    denoised_file = output_dir / 'received_denoised.png'
-                    SignalUtils.qpsk_to_file(clean_data, denoised_file)
-                    print(f"💾 Saved denoised: {denoised_file}")
-                    
-                    # Save 3-image comparison: Original, Noisy, Denoised
-                    comparison_plot = plot_dir / 'image_comparison.png'
-                    if args.mode == 'loopback' and original_file:
-                        print("\n🖼️  Saving comparison: Original → Noisy → Denoised")
-                        visualize_images(original_file, noisy_file, denoised_file, save_path=comparison_plot)
+                    if success:
+                        # Find the reconstructed file
+                        noisy_files = list(noisy_dir.glob('*'))
+                        if noisy_files:
+                            noisy_file = noisy_files[0]
+                            print(f"\n💾 Saved noisy: {noisy_file}")
+                            
+                            # Denoise
+                            print("\n🧠 Applying AI denoising...")
+                            clean_data = SignalUtils.denoise_signal(data, args.model)
+                            
+                            # Save denoised version
+                            denoised_dir = output_dir / 'denoised'
+                            denoised_dir.mkdir(parents=True, exist_ok=True)
+                            success_denoised = SignalUtils.qpsk_to_file(clean_data, str(denoised_dir))
+                            
+                            if success_denoised:
+                                denoised_files = list(denoised_dir.glob('*'))
+                                if denoised_files:
+                                    denoised_file = denoised_files[0]
+                                    print(f"💾 Saved denoised: {denoised_file}")
+                                    
+                                    # Save 3-image comparison: Original, Noisy, Denoised
+                                    comparison_plot = plot_dir / 'image_comparison.png'
+                                    if args.mode == 'loopback' and original_file:
+                                        print("\n🖼️  Saving comparison: Original → Noisy → Denoised")
+                                        visualize_images(original_file, noisy_file, denoised_file, save_path=comparison_plot)
+                                    else:
+                                        print("\n🖼️  Saving comparison: Noisy → Denoised")
+                                        visualize_images(noisy_file, noisy_file, denoised_file, save_path=comparison_plot)
+                            else:
+                                print("⚠️  Denoised file reconstruction failed")
+                        else:
+                            print("⚠️  No noisy file found after reconstruction")
                     else:
-                        print("\n🖼️  Saving comparison: Noisy → Denoised")
-                        visualize_images(noisy_file, noisy_file, denoised_file, save_path=comparison_plot)
+                        print("⚠️  Noisy file reconstruction failed - data may be corrupted")
                 else:
                     # No denoising - just save received
-                    output_file = output_dir / 'received.png'
-                    SignalUtils.qpsk_to_file(data, output_file)
-                    print(f"\n💾 Saved received: {output_file}")
+                    received_dir = output_dir / 'received'
+                    received_dir.mkdir(parents=True, exist_ok=True)
+                    success = SignalUtils.qpsk_to_file(data, str(received_dir))
                     
-                    # Save comparison: Original vs Received
-                    if args.mode == 'loopback' and original_file:
-                        comparison_plot = plot_dir / 'image_comparison.png'
-                        print("\n🖼️  Saving comparison: Original → Received")
-                        visualize_images(original_file, output_file, None, save_path=comparison_plot)
+                    if success:
+                        # Find the reconstructed file
+                        received_files = list(received_dir.glob('*'))
+                        if received_files:
+                            output_file = received_files[0]
+                            print(f"\n💾 Saved received: {output_file}")
+                            
+                            # Save comparison: Original vs Received
+                            if args.mode == 'loopback' and original_file:
+                                comparison_plot = plot_dir / 'image_comparison.png'
+                                print("\n🖼️  Saving comparison: Original → Received")
+                                visualize_images(original_file, output_file, None, save_path=comparison_plot)
+                        else:
+                            print("⚠️  No received file found after reconstruction")
+                    else:
+                        print("⚠️  File reconstruction failed - data may be corrupted")
             
             rx.close()
 
