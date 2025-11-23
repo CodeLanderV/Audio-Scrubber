@@ -28,7 +28,7 @@ SDR_CONFIG = {
     'center_freq': 915e6,      # 915 MHz ISM band
     'sample_rate': 2e6,        # 2 MSPS
     'bandwidth': 2e6,          # 2 MHz
-    'tx_gain': -10,            # Pluto TX gain (dB)
+    'tx_gain': 0,              # Pluto TX gain (dB) - Increased for better signal power
     'rx_gain': 'auto',         # RTL-SDR gain
     'pluto_ip': 'ip:192.168.2.1',
     'buffer_size': 65536,      # Minimum buffer size
@@ -39,7 +39,7 @@ FM_CONFIG = {
     'center_freq': 105e6,      # 105 MHz (FM radio band 88-108 MHz)
     'sample_rate': 2e6,        # 2 MSPS
     'bandwidth': 2e6,          # 2 MHz
-    'tx_gain': -10,            # Pluto TX gain (dB)
+    'tx_gain': 0,              # Pluto TX gain (dB) - Increased for better signal power
     'rx_gain': 'auto',         # RTL-SDR gain
     'pluto_ip': 'ip:192.168.2.1',
     'buffer_size': 65536,      # Minimum buffer size

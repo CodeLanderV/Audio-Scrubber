@@ -127,8 +127,8 @@ def main():
         # Load data file
         data_bytes = SDRUtils.load_data(data_path)
         
-        # Modulate
-        tx_waveform = modulation.modulate(data_bytes)
+        # Modulate (pass image path for visualization)
+        tx_waveform = modulation.modulate(data_bytes, image_path=data_path)
     else:  # FM
         # Check if real-time streaming mode (file input)
         if isinstance(data_path, str) and Path(data_path).exists():

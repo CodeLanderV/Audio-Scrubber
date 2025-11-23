@@ -92,17 +92,28 @@ class OFDM_Modulation:
             self.use_ai = False
             self.model = None
     
-    def modulate(self, data_bytes):
+    def modulate(self, data_bytes, image_path=None):
         """
         Modulate data to OFDM waveform.
         
         Args:
             data_bytes: Raw data bytes
+            image_path: Optional path to original image for visualization
             
         Returns:
             Complex IQ waveform
         """
         print(f"🔄 Modulating {len(data_bytes)} bytes...")
+        
+        # Store original image for later comparison
+        self.original_image = None
+        if image_path and Path(image_path).suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp']:
+            try:
+                from PIL import Image
+                self.original_image = Image.open(image_path)
+                print(f"📷 Original image: {self.original_image.size}")
+            except Exception as e:
+                print(f"⚠️  Could not load image for visualization: {e}")
         
         # Transmit using OFDM transmitter
         waveform, info = self.transmitter.transmit(data_bytes)
@@ -175,8 +186,11 @@ class OFDM_Modulation:
                 result['data'] = result['control_data']  # Fallback to control
                 result['stats'] = control_stats
             
-            # Plot comparison
-            self._plot_denoising_results(waveform, denoised_waveform, control_stats, ai_stats)
+            # Plot comparison with images if available
+            self._plot_denoising_results(
+                waveform, denoised_waveform, control_stats, ai_stats,
+                control_bytes, ai_bytes
+            )
         else:
             # No AI, use control path result
             result['data'] = result['control_data']
@@ -209,97 +223,176 @@ class OFDM_Modulation:
         print(f"🧠 AI Denoised: {len(denoised_waveform)} samples")
         return denoised_waveform
     
-    def _plot_denoising_results(self, noisy, denoised, control_stats, ai_stats):
-        """Plot comprehensive OFDM comparison with before/after constellations."""
+    def _plot_denoising_results(self, noisy, denoised, control_stats, ai_stats, 
+                                  control_bytes=None, ai_bytes=None):
+        """Plot comprehensive OFDM comparison with images and noise metrics."""
+        from PIL import Image
+        import io
+        
         model_name = Path(self.model_path).stem if self.model_path else "NoModel"
         
         # Extract symbols for constellation
         noisy_symbols = self._extract_symbols(noisy)
         denoised_symbols = self._extract_symbols(denoised)
         
+        # Try to reconstruct images from bytes
+        original_img = self.original_image if hasattr(self, 'original_image') else None
+        noisy_img = None
+        clean_img = None
+        
+        if control_bytes:
+            try:
+                noisy_img = Image.open(io.BytesIO(control_bytes))
+            except:
+                pass
+        
+        if ai_bytes:
+            try:
+                clean_img = Image.open(io.BytesIO(ai_bytes))
+            except:
+                pass
+        
+        # Calculate noise metrics if we have images
+        noise_metrics = {}
+        if original_img and noisy_img:
+            noise_metrics = self._calculate_noise_metrics(original_img, noisy_img, clean_img)
+        
         output_dir = Path('src/inference/plot')
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create comprehensive comparison plot (2x2 grid)
-        fig = plt.figure(figsize=(16, 12))
-        gs = fig.add_gridspec(2, 2, hspace=0.35, wspace=0.3)
+        # Create comprehensive comparison plot (3x2 grid)
+        fig = plt.figure(figsize=(16, 18))
+        gs = fig.add_gridspec(3, 2, hspace=0.35, wspace=0.3)
+        
+        # Row 1: Images (if available)
+        if original_img or noisy_img or clean_img:
+            # Original Image
+            ax1 = fig.add_subplot(gs[0, 0])
+            if original_img:
+                ax1.imshow(original_img)
+                ax1.set_title('📷 Original Image (Before TX)', fontweight='bold', fontsize=14)
+            else:
+                ax1.text(0.5, 0.5, 'No Image', ha='center', va='center', fontsize=14)
+                ax1.set_title('📷 Original Image', fontweight='bold', fontsize=14)
+            ax1.axis('off')
+            
+            # Received Image (with noise metrics)
+            ax2 = fig.add_subplot(gs[0, 1])
+            if clean_img:
+                ax2.imshow(clean_img)
+                title = '📷 Received Image (After RX + AI)'
+                if noise_metrics:
+                    title += f"\nPSNR: {noise_metrics.get('psnr_clean', 0):.2f} dB"
+                ax2.set_title(title, fontweight='bold', fontsize=14)
+            elif noisy_img:
+                ax2.imshow(noisy_img)
+                title = '📷 Received Image (After RX, No AI)'
+                if noise_metrics:
+                    title += f"\nPSNR: {noise_metrics.get('psnr_noisy', 0):.2f} dB"
+                ax2.set_title(title, fontweight='bold', fontsize=14)
+            else:
+                ax2.text(0.5, 0.5, 'No Image', ha='center', va='center', fontsize=14)
+                ax2.set_title('📷 Received Image', fontweight='bold', fontsize=14)
+            ax2.axis('off')
+        else:
+            # No images - show noise metrics as text
+            ax1 = fig.add_subplot(gs[0, :])
+            ax1.text(0.5, 0.5, 'No image data available for visualization', 
+                    ha='center', va='center', fontsize=14)
+            ax1.axis('off')
         
         # QPSK reference points
         qpsk_ref = np.array([1+1j, -1+1j, 1-1j, -1-1j]) / np.sqrt(2)
         
-        # Top Left: Constellation BEFORE Denoising
-        ax1 = fig.add_subplot(gs[0, 0])
-        if noisy_symbols is not None and len(noisy_symbols) > 0:
-            ax1.scatter(np.real(noisy_symbols), np.imag(noisy_symbols),
-                       alpha=0.4, s=15, c='orange', label='Noisy Symbols')
-            ax1.scatter(np.real(qpsk_ref), np.imag(qpsk_ref),
-                       c='red', s=250, marker='x', linewidths=4, label='Ideal QPSK', zorder=5)
-        ax1.axhline(0, color='k', linewidth=0.8, alpha=0.3)
-        ax1.axvline(0, color='k', linewidth=0.8, alpha=0.3)
-        ax1.set_title('BEFORE Denoising - Constellation', fontweight='bold', fontsize=14)
-        ax1.set_xlabel('I (In-Phase)', fontsize=11)
-        ax1.set_ylabel('Q (Quadrature)', fontsize=11)
-        ax1.legend(loc='upper right', fontsize=10)
-        ax1.grid(True, alpha=0.3, linestyle='--')
-        ax1.axis('equal')
-        ax1.set_xlim(-1.5, 1.5)
-        ax1.set_ylim(-1.5, 1.5)
-        
-        # Top Right: Constellation AFTER Denoising
-        ax2 = fig.add_subplot(gs[0, 1])
-        if denoised_symbols is not None and len(denoised_symbols) > 0:
-            ax2.scatter(np.real(denoised_symbols), np.imag(denoised_symbols),
-                       alpha=0.4, s=15, c='blue', label='Denoised Symbols')
-            ax2.scatter(np.real(qpsk_ref), np.imag(qpsk_ref),
-                       c='red', s=250, marker='x', linewidths=4, label='Ideal QPSK', zorder=5)
-        ax2.axhline(0, color='k', linewidth=0.8, alpha=0.3)
-        ax2.axvline(0, color='k', linewidth=0.8, alpha=0.3)
-        ax2.set_title('AFTER Denoising - Constellation', fontweight='bold', fontsize=14)
-        ax2.set_xlabel('I (In-Phase)', fontsize=11)
-        ax2.set_ylabel('Q (Quadrature)', fontsize=11)
-        ax2.legend(loc='upper right', fontsize=10)
-        ax2.grid(True, alpha=0.3, linestyle='--')
-        ax2.axis('equal')
-        ax2.set_xlim(-1.5, 1.5)
-        ax2.set_ylim(-1.5, 1.5)
-        
-        # Bottom Left: Waveform Comparison
+        # Row 2: Constellations
+        # Left: Constellation BEFORE Denoising
         ax3 = fig.add_subplot(gs[1, 0])
-        time_axis = np.arange(1000)
-        ax3.plot(time_axis, np.real(noisy[:1000]), label='Noisy I', 
-                alpha=0.6, linewidth=1.2, color='orange')
-        ax3.plot(time_axis, np.real(denoised[:1000]), label='Denoised I', 
-                alpha=0.8, linewidth=1.0, color='blue', linestyle='--')
-        ax3.set_title('Waveform Comparison (I channel)', fontweight='bold', fontsize=12)
-        ax3.set_xlabel('Sample', fontsize=11)
-        ax3.set_ylabel('Amplitude', fontsize=11)
-        ax3.legend(fontsize=10)
-        ax3.grid(True, alpha=0.3)
+        if noisy_symbols is not None and len(noisy_symbols) > 0:
+            ax3.scatter(np.real(noisy_symbols), np.imag(noisy_symbols),
+                       alpha=0.4, s=15, c='orange', label='Noisy Symbols')
+            ax3.scatter(np.real(qpsk_ref), np.imag(qpsk_ref),
+                       c='red', s=250, marker='x', linewidths=4, label='Ideal QPSK', zorder=5)
+        ax3.axhline(0, color='k', linewidth=0.8, alpha=0.3)
+        ax3.axvline(0, color='k', linewidth=0.8, alpha=0.3)
+        ax3.set_title('BEFORE Denoising - Constellation', fontweight='bold', fontsize=14)
+        ax3.set_xlabel('I (In-Phase)', fontsize=11)
+        ax3.set_ylabel('Q (Quadrature)', fontsize=11)
+        ax3.legend(loc='upper right', fontsize=10)
+        ax3.grid(True, alpha=0.3, linestyle='--')
+        ax3.axis('equal')
+        ax3.set_xlim(-1.5, 1.5)
+        ax3.set_ylim(-1.5, 1.5)
         
-        # Bottom Right: PSD Comparison
+        # Right: Constellation AFTER Denoising
         ax4 = fig.add_subplot(gs[1, 1])
-        ax4.psd(noisy, NFFT=1024, Fs=2.0, scale_by_freq=False, 
-               color='orange', alpha=0.7, label='Noisy')
-        ax4.psd(denoised, NFFT=1024, Fs=2.0, scale_by_freq=False, 
-               color='blue', alpha=0.7, label='Denoised')
-        ax4.set_title('Power Spectral Density', fontweight='bold', fontsize=12)
-        ax4.set_xlabel('Frequency (MHz)', fontsize=11)
-        ax4.set_ylabel('Power (dB/Hz)', fontsize=11)
-        ax4.legend(fontsize=10)
-        ax4.grid(True, alpha=0.3)
+        if denoised_symbols is not None and len(denoised_symbols) > 0:
+            ax4.scatter(np.real(denoised_symbols), np.imag(denoised_symbols),
+                       alpha=0.4, s=15, c='blue', label='Denoised Symbols')
+            ax4.scatter(np.real(qpsk_ref), np.imag(qpsk_ref),
+                       c='red', s=250, marker='x', linewidths=4, label='Ideal QPSK', zorder=5)
+        ax4.axhline(0, color='k', linewidth=0.8, alpha=0.3)
+        ax4.axvline(0, color='k', linewidth=0.8, alpha=0.3)
+        ax4.set_title('AFTER Denoising - Constellation', fontweight='bold', fontsize=14)
+        ax4.set_xlabel('I (In-Phase)', fontsize=11)
+        ax4.set_ylabel('Q (Quadrature)', fontsize=11)
+        ax4.legend(loc='upper right', fontsize=10)
+        ax4.grid(True, alpha=0.3, linestyle='--')
+        ax4.axis('equal')
+        ax4.set_xlim(-1.5, 1.5)
+        ax4.set_ylim(-1.5, 1.5)
         
-        # Add stats as text
-        stats_text = (
+        # Row 3: Waveform and PSD
+        # Left: Waveform Comparison
+        ax5 = fig.add_subplot(gs[2, 0])
+        time_axis = np.arange(1000)
+        ax5.plot(time_axis, np.real(noisy[:1000]), label='Noisy I', 
+                alpha=0.6, linewidth=1.2, color='orange')
+        ax5.plot(time_axis, np.real(denoised[:1000]), label='Denoised I', 
+                alpha=0.8, linewidth=1.0, color='blue', linestyle='--')
+        ax5.set_title('Waveform Comparison (I channel)', fontweight='bold', fontsize=12)
+        ax5.set_xlabel('Sample', fontsize=11)
+        ax5.set_ylabel('Amplitude', fontsize=11)
+        ax5.legend(fontsize=10)
+        ax5.grid(True, alpha=0.3)
+        
+        # Right: PSD Comparison
+        ax6 = fig.add_subplot(gs[2, 1])
+        ax6.psd(noisy, NFFT=1024, Fs=2.0, scale_by_freq=False, 
+               color='orange', alpha=0.7, label='Noisy')
+        ax6.psd(denoised, NFFT=1024, Fs=2.0, scale_by_freq=False, 
+               color='blue', alpha=0.7, label='Denoised')
+        ax6.set_title('Power Spectral Density', fontweight='bold', fontsize=12)
+        ax6.set_xlabel('Frequency (MHz)', fontsize=11)
+        ax6.set_ylabel('Power (dB/Hz)', fontsize=11)
+        ax6.legend(fontsize=10)
+        ax6.grid(True, alpha=0.3)
+        
+        # Add stats as text (including noise metrics)
+        stats_lines = [
             f"Control (No AI): BER={control_stats.get('ber', 0):.4f}, "
-            f"Errors={control_stats.get('bit_errors', 0)}/{control_stats.get('total_bits', 0)}\n"
+            f"Errors={control_stats.get('bit_errors', 0)}/{control_stats.get('total_bits', 0)}",
             f"AI Denoised:     BER={ai_stats.get('ber', 0):.4f}, "
             f"Errors={ai_stats.get('bit_errors', 0)}/{ai_stats.get('total_bits', 0)}"
-        )
-        fig.text(0.5, 0.02, stats_text, ha='center', fontsize=10, 
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        ]
         
-        plt.suptitle(f'OFDM Denoising Comparison - Model: {model_name}', 
-                    fontsize=16, fontweight='bold', y=0.98)
+        if noise_metrics:
+            stats_lines.append("\n🔊 NOISE METRICS:")
+            if 'snr_noisy' in noise_metrics:
+                stats_lines.append(f"   Noisy RX:  SNR={noise_metrics['snr_noisy']:.2f} dB, "
+                                 f"MSE={noise_metrics['mse_noisy']:.2f}, PSNR={noise_metrics['psnr_noisy']:.2f} dB")
+            if 'snr_clean' in noise_metrics:
+                stats_lines.append(f"   AI Clean:  SNR={noise_metrics['snr_clean']:.2f} dB, "
+                                 f"MSE={noise_metrics['mse_clean']:.2f}, PSNR={noise_metrics['psnr_clean']:.2f} dB")
+            if 'improvement' in noise_metrics:
+                stats_lines.append(f"   🎯 Improvement: {noise_metrics['improvement']:.2f} dB SNR gain")
+        
+        stats_text = '\n'.join(stats_lines)
+        fig.text(0.5, 0.01, stats_text, ha='center', fontsize=10, 
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+                verticalalignment='bottom')
+        
+        plt.suptitle(f'OFDM Transmission Analysis - Model: {model_name}', 
+                    fontsize=16, fontweight='bold', y=0.995)
         
         filename = f'OFDM_Comparison_{model_name}.png'
         output_path = output_dir / filename
@@ -314,6 +407,66 @@ class OFDM_Modulation:
               f"Errors={control_stats.get('bit_errors', 0)}/{control_stats.get('total_bits', 0)}")
         print(f"   AI:      BER={ai_stats.get('ber', 0):.4f}, "
               f"Errors={ai_stats.get('bit_errors', 0)}/{ai_stats.get('total_bits', 0)}")
+        
+        if noise_metrics:
+            print("\n🔊 Noise Metrics:")
+            if 'snr_noisy' in noise_metrics:
+                print(f"   Noisy:  SNR={noise_metrics['snr_noisy']:.2f} dB, "
+                      f"MSE={noise_metrics['mse_noisy']:.2f}, PSNR={noise_metrics['psnr_noisy']:.2f} dB")
+            if 'snr_clean' in noise_metrics:
+                print(f"   Clean:  SNR={noise_metrics['snr_clean']:.2f} dB, "
+                      f"MSE={noise_metrics['mse_clean']:.2f}, PSNR={noise_metrics['psnr_clean']:.2f} dB")
+            if 'improvement' in noise_metrics:
+                print(f"   🎯 Improvement: {noise_metrics['improvement']:.2f} dB")
+    
+    def _calculate_noise_metrics(self, original_img, noisy_img, clean_img=None):
+        """Calculate SNR, MSE, PSNR between images."""
+        metrics = {}
+        
+        try:
+            # Ensure same size
+            if original_img.size != noisy_img.size:
+                noisy_img = noisy_img.resize(original_img.size)
+            if clean_img and clean_img.size != original_img.size:
+                clean_img = clean_img.resize(original_img.size)
+            
+            # Convert to numpy arrays
+            orig = np.array(original_img, dtype=np.float64)
+            noisy = np.array(noisy_img, dtype=np.float64)
+            
+            # Calculate metrics for noisy image
+            mse_noisy = np.mean((orig - noisy) ** 2)
+            if mse_noisy > 0:
+                psnr_noisy = 10 * np.log10(255.0 ** 2 / mse_noisy)
+                signal_power = np.mean(orig ** 2)
+                noise_power = mse_noisy
+                snr_noisy = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else float('inf')
+                
+                metrics['mse_noisy'] = mse_noisy
+                metrics['psnr_noisy'] = psnr_noisy
+                metrics['snr_noisy'] = snr_noisy
+            
+            # Calculate metrics for clean image (if available)
+            if clean_img:
+                clean = np.array(clean_img, dtype=np.float64)
+                mse_clean = np.mean((orig - clean) ** 2)
+                if mse_clean > 0:
+                    psnr_clean = 10 * np.log10(255.0 ** 2 / mse_clean)
+                    noise_power_clean = mse_clean
+                    snr_clean = 10 * np.log10(signal_power / noise_power_clean) if noise_power_clean > 0 else float('inf')
+                    
+                    metrics['mse_clean'] = mse_clean
+                    metrics['psnr_clean'] = psnr_clean
+                    metrics['snr_clean'] = snr_clean
+                    
+                    # Calculate improvement
+                    if 'snr_noisy' in metrics:
+                        metrics['improvement'] = snr_clean - snr_noisy
+        
+        except Exception as e:
+            print(f"⚠️  Noise metrics calculation failed: {e}")
+        
+        return metrics
     
     def _extract_symbols(self, waveform):
         """Extract QPSK symbols from waveform for constellation plot."""

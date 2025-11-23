@@ -19,8 +19,8 @@ class OFDMConfig:
     pilot_carriers: np.ndarray = field(default_factory=lambda: np.array([-21, -7, 7, 21]))
     pilot_values: np.ndarray = field(default_factory=lambda: np.array([1, 1, 1, -1], dtype=np.complex64))
     
-    # Signal Power Normalization
-    target_power: float = 35.0
+    # Signal Power Normalization (Increased for better TX strength)
+    target_power: float = 50.0
 
     @property
     def symbol_len(self) -> int:

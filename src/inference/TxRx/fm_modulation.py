@@ -140,6 +140,9 @@ class FM_Modulation:
         phase = np.cumsum(2 * np.pi * self.fm_deviation * audio_resampled / self.sdr_rate)
         fm_waveform = np.exp(1j * phase)
         
+        # Boost signal power for better transmission (scale by 1.5x)
+        fm_waveform *= 1.5
+        
         # Plot before TX (only for non-realtime)
         model_name = Path(self.model_path).stem if self.model_path else "NoModel"
         SDRUtils.plot_waveform(
@@ -201,6 +204,9 @@ class FM_Modulation:
                 phase_accum = phase[-1]  # Carry phase to next chunk
                 
                 fm_chunk = np.exp(1j * phase)
+                
+                # Boost signal power for better transmission
+                fm_chunk *= 1.5
                 
                 chunk_num = i // chunk_size + 1
                 print(f"   Streaming chunk {chunk_num}/{total_chunks} ({len(fm_chunk)} samples)")
