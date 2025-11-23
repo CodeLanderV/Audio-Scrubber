@@ -69,6 +69,7 @@ SDR_CONFIG = {
     'PLUTO_IP': "ip:192.168.2.1",
     'TX_BUFFER_SIZE': 65536,     # Minimum for GNU Radio compatibility
     'IQ_SCALE': 0.8,             # Prevent clipping (0.0-1.0)
+    'MODEL_PATH': 'saved_models/OFDM/ofdm_unet_best.pth',  # Updated model path
 }
 
 

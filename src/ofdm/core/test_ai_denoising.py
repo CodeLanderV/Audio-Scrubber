@@ -245,12 +245,16 @@ def run_test():
         denoised_waveform = noisy_waveform
         ber_denoised = ber_noisy
     else:
-        # AI Denoising on WAVEFORM
-        model_path = 'saved_models/OFDM/ofdm_final_1dunet.pth'
+        # AI Denoising on WAVEFORM - UPDATED to use newly trained model
+        model_path = 'saved_models/OFDM/ofdm_unet_best.pth'
         if not Path(model_path).exists():
-            model_path = 'saved_models/OFDM/unet1d_best.pth'
+            # Fallback to old models
+            model_path = 'saved_models/OFDM/ofdm_final_1dunet.pth'
+            if not Path(model_path).exists():
+                model_path = 'saved_models/OFDM/unet1d_best.pth'
         
         print(f"🧠 Applying AI Denoising to OFDM waveform...")
+        print(f"   Model: {model_path}")
         denoised_waveform = denoise_waveform(noisy_waveform, model_path, params=params)
         
         print(f"✅ Denoising complete")
