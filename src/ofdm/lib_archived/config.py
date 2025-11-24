@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -13,14 +12,22 @@ class OFDMConfig:
     cp_len: int = 16
     sample_rate: int = 2000000  # 2 MHz
     
+    # Modulation Scheme
+    modulation_scheme: str = "qpsk"  # "qpsk" or "16qam"
+    
     # Subcarrier Mapping (Indices relative to DC)
     # Using field(default_factory=...) for mutable defaults (numpy arrays)
     data_carriers: np.ndarray = field(default_factory=lambda: np.array([-4, -3, -2, -1, 1, 2, 3, 4]))
     pilot_carriers: np.ndarray = field(default_factory=lambda: np.array([-21, -7, 7, 21]))
     pilot_values: np.ndarray = field(default_factory=lambda: np.array([1, 1, 1, -1], dtype=np.complex64))
     
-    # Signal Power Normalization (Increased for better TX strength)
-    target_power: float = 50.0
+    # Signal Power Normalization (OPTIMIZED for max SNR without clipping)
+    # target_power = 0.25 → RMS = 0.5 → peak ≈ 1.41 (slightly hot but recovers SNR loss)
+    # This ensures strong signal even with path loss
+    target_power: float = 1.0
+    
+    # Squelch: Use crop_to_signal to stop decoding noise
+    squelch_enabled: bool = True
 
     @property
     def symbol_len(self) -> int:

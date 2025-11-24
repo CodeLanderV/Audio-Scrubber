@@ -28,8 +28,8 @@ SDR_CONFIG = {
     'center_freq': 915e6,      # 915 MHz ISM band
     'sample_rate': 2e6,        # 2 MSPS
     'bandwidth': 2e6,          # 2 MHz
-    'tx_gain': 0,              # Pluto TX gain (dB) - Increased for better signal power
-    'rx_gain': 20,             # Pluto RX gain (dB)
+    'tx_gain': 0,              # 0 dB = Maximum TX power (No Attenuation)
+    'rx_gain': 60,             # RTL-SDR max ~50-60 dB, Pluto max 76 dB - Crank up for better reception!
     'pluto_tx_ip': 'ip:192.168.2.1',  # TX Pluto IP
     'pluto_rx_ip': 'ip:192.168.3.1',  # RX Pluto IP (different device)
     'buffer_size': 65536,      # Minimum buffer size
@@ -40,8 +40,8 @@ FM_CONFIG = {
     'center_freq': 105e6,      # 105 MHz (FM radio band 88-108 MHz)
     'sample_rate': 2e6,        # 2 MSPS
     'bandwidth': 2e6,          # 2 MHz
-    'tx_gain': 0,              # Pluto TX gain (dB) - Increased for better signal power
-    'rx_gain': 20,             # Pluto RX gain (dB)
+    'tx_gain': 0,              # 0 dB = Maximum TX power (No Attenuation)
+    'rx_gain': 60,             # Crank up for better reception!
     'pluto_tx_ip': 'ip:192.168.2.1',  # TX Pluto IP
     'pluto_rx_ip': 'ip:192.168.3.1',  # RX Pluto IP (different device)
     'buffer_size': 65536,      # Minimum buffer size
@@ -82,14 +82,16 @@ class PlutoSDR:
         try:
             self.sdr.tx_lo = int(freq or SDR_CONFIG['center_freq'])
             self.sdr.sample_rate = int(rate or SDR_CONFIG['sample_rate'])
-            self.sdr.tx_hardwaregain_chan0 = int(gain if gain is not None else SDR_CONFIG['tx_gain'])
+            # Use maximum TX gain by default (-89 to 0 dB, 0 is max power)
+            tx_gain = gain if gain is not None else SDR_CONFIG['tx_gain']
+            self.sdr.tx_hardwaregain_chan0 = int(tx_gain)
             self.sdr.tx_rf_bandwidth = int(bandwidth or SDR_CONFIG['bandwidth'])
             self.sdr.tx_cyclic_buffer = True
             
             print(f"⚙️  Pluto configured:")
             print(f"   Freq: {self.sdr.tx_lo/1e6:.1f} MHz")
             print(f"   Rate: {self.sdr.sample_rate/1e6:.1f} MSPS")
-            print(f"   Gain: {self.sdr.tx_hardwaregain_chan0} dB")
+            print(f"   Gain: {self.sdr.tx_hardwaregain_chan0} dB (max power)")
             return True
         except Exception as e:
             print(f"❌ Configuration failed: {e}")
@@ -338,7 +340,10 @@ class RTLSDR:
             chunk_size = 256*1024
             samples = []
             remaining = num_samples
-            
+
+            # Increase capturing power to 10,000
+            self.sdr.gain = 100
+
             while remaining > 0:
                 to_read = min(chunk_size, remaining)
                 chunk = self.sdr.read_samples(to_read)

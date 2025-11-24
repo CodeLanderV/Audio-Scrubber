@@ -381,7 +381,7 @@ class LiveSDRDenoiser:
         ax_spec.set_xlabel("Frequency (Hz)")
         ax_spec.set_ylabel("Magnitude (dB)")
         ax_spec.set_xlim(0, self.sample_rate // 2)
-        ax_spec.set_ylim(-100, 0)
+        ax_spec.set_ylim(-100, 100)
         ax_spec.grid(True, alpha=0.3)
         
         freqs = np.fft.rfftfreq(self.chunk_size, 1/self.sample_rate)

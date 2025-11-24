@@ -300,3 +300,74 @@ class SDRUtils:
             snr = np.inf
         
         return snr
+    
+    @staticmethod
+    def crop_to_signal(waveform, threshold_db=-20, padding=500):
+        """
+        SQUELCH: Detect and crop to ONLY the TX pulse region.
+        
+        Uses envelope detection to find burst boundaries precisely.
+        Critical for preventing massive symbol count from noise regions.
+        
+        Args:
+            waveform: Complex IQ samples
+            threshold_db: Not used (kept for API compatibility)
+            padding: Padding around detected burst
+            
+        Returns:
+            Cropped waveform with just the burst region
+        """
+        # 1. Compute envelope (moving average of power)
+        power = np.abs(waveform)**2
+        window = 200  # ~100 microseconds at 2 MSPS
+        kernel = np.ones(window) / window
+        envelope = np.convolve(power, kernel, mode='same')
+        
+        # 2. Find noise floor from first 10% (assumed quiet)
+        quiet_idx = len(waveform) // 10
+        noise_floor = np.mean(envelope[:quiet_idx])
+        
+        # 3. Threshold: 10x noise floor (more aggressive than +15 dB)
+        threshold = noise_floor * 10
+        
+        # 4. Find where burst starts and ends
+        active = envelope > threshold
+        active_indices = np.where(active)[0]
+        
+        if len(active_indices) < 100:  # Burst must be at least 100 samples
+            print(f"⚠️  No significant burst detected")
+            return waveform
+        
+        # 5. Group consecutive active regions and find the largest one
+        # (in case there are multiple bursts or noise spikes)
+        groups = []
+        group_start = active_indices[0]
+        group_end = active_indices[0]
+        
+        for idx in active_indices[1:]:
+            if idx - group_end <= window:  # Still in same burst
+                group_end = idx
+            else:  # New burst
+                groups.append((group_start, group_end))
+                group_start = idx
+                group_end = idx
+        groups.append((group_start, group_end))  # Last group
+        
+        # Find largest burst
+        largest_burst = max(groups, key=lambda x: x[1] - x[0])
+        start_idx, end_idx = largest_burst
+        
+        # 6. Add padding
+        start = max(0, start_idx - padding)
+        end = min(len(waveform), end_idx + padding)
+        
+        duration_ms = (end - start) / 2e6 * 1000
+        num_symbols = (end - start) // 80
+        
+        print(f"✂️  SQUELCH (Burst Detection):")
+        print(f"   Noise floor: {10*np.log10(noise_floor):.2f} dB")
+        print(f"   Burst region: Samples {start:,} to {end:,}")
+        print(f"   Duration: {duration_ms:.2f} ms ({num_symbols} OFDM symbols)")
+        
+        return waveform[start:end]
+

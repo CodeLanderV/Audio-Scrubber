@@ -245,6 +245,10 @@ def main():
 
     # 4. Prepare AI modulation instance (with model)
     modulation_ai = OFDM_Modulation(use_ai=not args.no_ai, model_path=args.model)
+    
+    # Share original bits from modulation instance for BER calculation
+    if hasattr(modulation_clean, 'original_bits'):
+        modulation_ai.original_bits = modulation_clean.original_bits
 
     # 5. Demodulate with control & AI
     print('\n🔄 Demodulating NOISY waveform (Control + AI)...')
