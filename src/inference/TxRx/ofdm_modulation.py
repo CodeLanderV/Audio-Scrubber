@@ -33,13 +33,17 @@ class OFDM_Modulation:
         
         Args:
             use_ai: Enable AI denoising
-            model_path: Path to trained model (if None, searches saved_models/OFDM/final_models)
+            model_path: Path to trained model (if None, uses saved_models/OFDM/final_models/ofdm_1dunet_best_fixed.pth)
             passthrough: Skip AI denoising (raw OFDM only)
             use_enhanced_fec: Enable enhanced FEC (payload protection + error detection)
             modulation: Modulation scheme - "qpsk" (2 bits/symbol) or "16qam" (4 bits/symbol)
         """
         self.use_ai = use_ai and not passthrough
-        self.model_path = model_path
+        # Force model path if not given
+        if model_path is None:
+            self.model_path = "saved_models/OFDM/final_models/ofdm_1dunet_best_fixed.pth"
+        else:
+            self.model_path = model_path
         self.model = None
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.use_enhanced_fec = use_enhanced_fec

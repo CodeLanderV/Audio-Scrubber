@@ -304,8 +304,8 @@ class RTLSDR:
             self.sdr = RtlSdr()
             self.sdr.center_freq = int(freq or SDR_CONFIG['center_freq'])
             self.sdr.sample_rate = int(rate or SDR_CONFIG['sample_rate'])
-            self.sdr.gain = gain or SDR_CONFIG['rx_gain']
-            
+            # Set gain to max (60 or 50 dB depending on stick)
+            self.sdr.gain = gain if gain is not None else SDR_CONFIG['rx_gain']
             print(f"⚙️  RTL-SDR configured:")
             print(f"   Freq: {self.sdr.center_freq/1e6:.1f} MHz")
             print(f"   Rate: {self.sdr.sample_rate/1e6:.1f} MSPS")
@@ -341,8 +341,8 @@ class RTLSDR:
             samples = []
             remaining = num_samples
 
-            # Increase capturing power to 10,000
-            self.sdr.gain = 100
+            # Ensure gain is set to max before capture (redundant but safe)
+            self.sdr.gain = max(self.sdr.gain, 50)
 
             while remaining > 0:
                 to_read = min(chunk_size, remaining)

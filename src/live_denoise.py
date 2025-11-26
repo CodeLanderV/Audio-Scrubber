@@ -64,7 +64,7 @@ class LiveSDRDenoiser:
     """
     def __init__(self, model_path=None, chunk_size=None, sample_rate=None, device='cpu', 
                  input_device_name='CABLE Output', output_device_name=None, passthrough=False,
-                 mode='general', architecture=None):
+                 mode='general', architecture=None, enable_plot=False):
         """
         Args:
             model_path: Direct path to model file (overrides mode/architecture search)
@@ -87,6 +87,7 @@ class LiveSDRDenoiser:
         self.output_device_name = output_device_name
         self.passthrough = passthrough
         self.model_info = None
+        self.enable_plot = enable_plot
         
         # Load model only if not in passthrough mode
         if not self.passthrough:
@@ -152,6 +153,7 @@ class LiveSDRDenoiser:
             print("  Mode: Passthrough (No Denoising)")
         else:
             print("  Mode: Denoising")
+        print(f"  Live Plot: {'Enabled' if self.enable_plot else 'Disabled'}")
 
         # Reporting buffers (Keep last 10 seconds)
         self.history_duration = 10 
@@ -362,34 +364,37 @@ class LiveSDRDenoiser:
         self.ai_thread.start()
         
         # --- Live Plot Setup ---
-        print("📊 Initializing Live Plot...")
-        plt.ion()
-        fig, (ax_wave, ax_spec) = plt.subplots(2, 1, figsize=(10, 8))
-        fig.canvas.manager.set_window_title("Live SDR Audio Monitor")
-        
-        # Waveform
-        x = np.arange(self.chunk_size)
-        line_noisy, = ax_wave.plot(x, np.zeros(self.chunk_size), color='orange', alpha=0.6, label='Noisy Input')
-        line_clean, = ax_wave.plot(x, np.zeros(self.chunk_size), color='blue', alpha=0.8, label='Clean Output')
-        ax_wave.set_ylim(-0.5, 0.5) 
-        ax_wave.set_title("Real-time Waveform")
-        ax_wave.legend(loc='upper right')
-        ax_wave.grid(True, alpha=0.3)
-        
-        # Spectrum
-        ax_spec.set_title("Real-time Frequency Spectrum")
-        ax_spec.set_xlabel("Frequency (Hz)")
-        ax_spec.set_ylabel("Magnitude (dB)")
-        ax_spec.set_xlim(0, self.sample_rate // 2)
-        ax_spec.set_ylim(-100, 100)
-        ax_spec.grid(True, alpha=0.3)
-        
-        freqs = np.fft.rfftfreq(self.chunk_size, 1/self.sample_rate)
-        line_spec_noisy, = ax_spec.plot(freqs, np.zeros_like(freqs), color='orange', alpha=0.6, label='Noisy')
-        line_spec_clean, = ax_spec.plot(freqs, np.zeros_like(freqs), color='blue', alpha=0.8, label='Clean')
-        ax_spec.legend(loc='upper right')
-        
-        plt.tight_layout()
+        if self.enable_plot:
+            print("📊 Initializing Live Plot...")
+            plt.ion()
+            fig, (ax_wave, ax_spec) = plt.subplots(2, 1, figsize=(10, 8))
+            try:
+                fig.canvas.manager.set_window_title("Live SDR Audio Monitor")
+            except Exception:
+                pass
+            # Waveform
+            x = np.arange(self.chunk_size)
+            line_noisy, = ax_wave.plot(x, np.zeros(self.chunk_size), color='orange', alpha=0.6, label='Noisy Input')
+            line_clean, = ax_wave.plot(x, np.zeros(self.chunk_size), color='blue', alpha=0.8, label='Clean Output')
+            ax_wave.set_ylim(-0.5, 0.5)
+            ax_wave.set_title("Real-time Waveform")
+            ax_wave.legend(loc='upper right')
+            ax_wave.grid(True, alpha=0.3)
+
+            # Spectrum
+            ax_spec.set_title("Real-time Frequency Spectrum")
+            ax_spec.set_xlabel("Frequency (Hz)")
+            ax_spec.set_ylabel("Magnitude (dB)")
+            ax_spec.set_xlim(0, self.sample_rate // 2)
+            ax_spec.set_ylim(-100, 100)
+            ax_spec.grid(True, alpha=0.3)
+
+            freqs = np.fft.rfftfreq(self.chunk_size, 1/self.sample_rate)
+            line_spec_noisy, = ax_spec.plot(freqs, np.zeros_like(freqs), color='orange', alpha=0.6, label='Noisy')
+            line_spec_clean, = ax_spec.plot(freqs, np.zeros_like(freqs), color='blue', alpha=0.8, label='Clean')
+            ax_spec.legend(loc='upper right')
+
+            plt.tight_layout()
         # -----------------------
         
         try:
@@ -408,29 +413,29 @@ class LiveSDRDenoiser:
                 print(f"   Listening for audio... (Check the plot window)\n")
                 
                 while self.running.is_set():
-                    # Update Plot Loop
-                    if self.input_history and self.output_history:
+                    # Update Plot Loop (only if plotting enabled)
+                    if self.enable_plot and self.input_history and self.output_history:
                         try:
                             # Get latest chunks
                             noisy = self.input_history[-1]
                             clean = self.output_history[-1]
-                            
+
                             # Update Waveform
                             line_noisy.set_ydata(noisy)
                             line_clean.set_ydata(clean)
-                            
+
                             # Update Spectrum
                             fft_noisy = 20 * np.log10(np.abs(np.fft.rfft(noisy)) + 1e-9)
                             fft_clean = 20 * np.log10(np.abs(np.fft.rfft(clean)) + 1e-9)
-                            
+
                             line_spec_noisy.set_ydata(fft_noisy)
                             line_spec_clean.set_ydata(fft_clean)
-                            
+
                             fig.canvas.draw_idle()
                             fig.canvas.flush_events()
-                        except Exception as e:
+                        except Exception:
                             pass # Ignore plot errors to keep audio running
-                            
+
                     time.sleep(0.1) # 10 FPS
         
         except KeyboardInterrupt:
@@ -438,7 +443,11 @@ class LiveSDRDenoiser:
         except Exception as e:
             print(f"\n❌ An error occurred: {e}")
         finally:
-            plt.close('all')
+            if self.enable_plot:
+                try:
+                    plt.close('all')
+                except Exception:
+                    pass
             self.stop()
     
     def stop(self):
@@ -473,6 +482,7 @@ def main():
                        help='Model architecture: 1dunet or stft (default: auto-detect).')
     parser.add_argument('--chunk-size', type=int, default=8192, help='Audio chunk size.')
     parser.add_argument('--cpu', action='store_true', help='Force CPU processing.')
+    parser.add_argument('--plot', action='store_true', help='Enable live plotting (disabled by default).')
     args = parser.parse_args()
 
     if args.list_devices:
@@ -501,7 +511,8 @@ def main():
         device=device,
         input_device_name=args.input_device,
         output_device_name=args.output_device,
-        passthrough=args.passthrough
+        passthrough=args.passthrough,
+        enable_plot=args.plot
     )
     
     denoiser.start()
